@@ -14,6 +14,7 @@ type ManagerConfig struct {
 	LeveledLogger      logging.LeveledLogger
 	AllocatePacketConn func(network string, requestedPort int) (net.PacketConn, net.Addr, error)
 	AllocateConn       func(network string, requestedPort int) (net.Conn, net.Addr, error)
+	TrackTraffic       func(username string)
 }
 
 type reservation struct {
@@ -31,6 +32,7 @@ type Manager struct {
 
 	allocatePacketConn func(network string, requestedPort int) (net.PacketConn, net.Addr, error)
 	allocateConn       func(network string, requestedPort int) (net.Conn, net.Addr, error)
+	trackTraffic       func(username string)
 }
 
 // NewManager creates a new instance of Manager.
@@ -49,6 +51,7 @@ func NewManager(config ManagerConfig) (*Manager, error) {
 		allocations:        make(map[string]*Allocation, 64),
 		allocatePacketConn: config.AllocatePacketConn,
 		allocateConn:       config.AllocateConn,
+		trackTraffic:       config.TrackTraffic,
 	}, nil
 }
 
@@ -73,7 +76,7 @@ func (m *Manager) Close() error {
 }
 
 // CreateAllocation creates a new allocation and starts relaying
-func (m *Manager) CreateAllocation(fiveTuple *FiveTuple, turnSocket net.PacketConn, requestedPort int, lifetime time.Duration) (*Allocation, error) {
+func (m *Manager) CreateAllocation(username string, fiveTuple *FiveTuple, turnSocket net.PacketConn, requestedPort int, lifetime time.Duration) (*Allocation, error) {
 	switch {
 	case fiveTuple == nil:
 		return nil, errNilFiveTuple
@@ -90,7 +93,7 @@ func (m *Manager) CreateAllocation(fiveTuple *FiveTuple, turnSocket net.PacketCo
 	if a := m.GetAllocation(fiveTuple); a != nil {
 		return nil, fmt.Errorf("%w: %v", errDupeFiveTuple, fiveTuple)
 	}
-	a := NewAllocation(turnSocket, fiveTuple, m.log)
+	a := NewAllocation(m.trackTraffic, turnSocket, fiveTuple, m.log)
 
 	conn, relayAddr, err := m.allocatePacketConn("udp4", requestedPort)
 	if err != nil {
@@ -110,7 +113,7 @@ func (m *Manager) CreateAllocation(fiveTuple *FiveTuple, turnSocket net.PacketCo
 	m.allocations[fiveTuple.Fingerprint()] = a
 	m.lock.Unlock()
 
-	go a.packetHandler(m)
+	go a.packetHandler(username, m)
 	return a, nil
 }
 
@@ -168,23 +171,19 @@ func (m *Manager) GetReservation(reservationToken string) (int, bool) {
 
 // GetRandomEvenPort returns a random un-allocated udp4 port
 func (m *Manager) GetRandomEvenPort() (int, error) {
-	for i := 0; i < 128; i++ {
-		conn, addr, err := m.allocatePacketConn("udp4", 0)
-		if err != nil {
-			return 0, err
-		}
-		udpAddr, ok := addr.(*net.UDPAddr)
-		err = conn.Close()
-		if err != nil {
-			return 0, err
-		}
-
-		if !ok {
-			return 0, errFailedToCastUDPAddr
-		}
-		if udpAddr.Port%2 == 0 {
-			return udpAddr.Port, nil
-		}
+	conn, addr, err := m.allocatePacketConn("udp4", 0)
+	if err != nil {
+		return 0, err
 	}
-	return 0, errFailedToAllocateEvenPort
+
+	udpAddr, ok := addr.(*net.UDPAddr)
+	if !ok {
+		return 0, errFailedToCastUDPAddr
+	} else if err := conn.Close(); err != nil {
+		return 0, err
+	} else if udpAddr.Port%2 == 1 {
+		return m.GetRandomEvenPort()
+	}
+
+	return udpAddr.Port, nil
 }

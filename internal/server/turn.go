@@ -19,7 +19,7 @@ func handleAllocateRequest(r Request, m *stun.Message) error {
 	//    mechanism of [https://tools.ietf.org/html/rfc5389#section-10.2.2]
 	//    unless the client and server agree to use another mechanism through
 	//    some procedure outside the scope of this document.
-	messageIntegrity, hasAuth, err := authenticateRequest(r, m, stun.MethodAllocate)
+	username, messageIntegrity, hasAuth, err := authenticateRequest(r, m, stun.MethodAllocate)
 	if !hasAuth {
 		return err
 	}
@@ -113,6 +113,7 @@ func handleAllocateRequest(r Request, m *stun.Message) error {
 	//    attribute follow the specification in [RFC5389].
 	lifetimeDuration := allocationLifeTime(m)
 	a, err := r.AllocationManager.CreateAllocation(
+		username,
 		fiveTuple,
 		r.Conn,
 		requestedPort,
@@ -168,7 +169,7 @@ func handleAllocateRequest(r Request, m *stun.Message) error {
 func handleRefreshRequest(r Request, m *stun.Message) error {
 	r.Log.Debugf("received RefreshRequest from %s", r.SrcAddr.String())
 
-	messageIntegrity, hasAuth, err := authenticateRequest(r, m, stun.MethodRefresh)
+	_, messageIntegrity, hasAuth, err := authenticateRequest(r, m, stun.MethodRefresh)
 	if !hasAuth {
 		return err
 	}
@@ -211,7 +212,7 @@ func handleCreatePermissionRequest(r Request, m *stun.Message) error {
 		return fmt.Errorf("%w %v:%v", errNoAllocationFound, r.SrcAddr, r.Conn.LocalAddr())
 	}
 
-	messageIntegrity, hasAuth, err := authenticateRequest(r, m, stun.MethodCreatePermission)
+	_, messageIntegrity, hasAuth, err := authenticateRequest(r, m, stun.MethodCreatePermission)
 	if !hasAuth {
 		return err
 	}
@@ -294,7 +295,7 @@ func handleChannelBindRequest(r Request, m *stun.Message) error {
 
 	badRequestMsg := buildMsg(m.TransactionID, stun.NewType(stun.MethodChannelBind, stun.ClassErrorResponse), &stun.ErrorCodeAttribute{Code: stun.CodeBadRequest})
 
-	messageIntegrity, hasAuth, err := authenticateRequest(r, m, stun.MethodChannelBind)
+	_, messageIntegrity, hasAuth, err := authenticateRequest(r, m, stun.MethodChannelBind)
 	if !hasAuth {
 		return err
 	}

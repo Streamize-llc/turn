@@ -14,6 +14,7 @@ import (
 
 // Allocation is tied to a FiveTuple and relays traffic
 // use CreateAllocation and GetAllocation to operate
+
 type Allocation struct {
 	RelayAddr           net.Addr
 	Protocol            Protocol
@@ -26,6 +27,7 @@ type Allocation struct {
 	channelBindings     []*ChannelBind
 	lifetimeTimer       *time.Timer
 	closed              chan interface{}
+	trackTraffic        func(username string)
 	log                 logging.LeveledLogger
 }
 
@@ -40,13 +42,14 @@ func addr2IPFingerprint(addr net.Addr) string {
 }
 
 // NewAllocation creates a new instance of NewAllocation.
-func NewAllocation(turnSocket net.PacketConn, fiveTuple *FiveTuple, log logging.LeveledLogger) *Allocation {
+func NewAllocation(trackTraffic func(username string), turnSocket net.PacketConn, fiveTuple *FiveTuple, log logging.LeveledLogger) *Allocation {
 	return &Allocation{
-		TurnSocket:  turnSocket,
-		fiveTuple:   fiveTuple,
-		permissions: make(map[string]*Permission, 64),
-		closed:      make(chan interface{}),
-		log:         log,
+		TurnSocket:   turnSocket,
+		fiveTuple:    fiveTuple,
+		permissions:  make(map[string]*Permission, 64),
+		closed:       make(chan interface{}),
+		log:          log,
+		trackTraffic: trackTraffic,
 	}
 }
 
@@ -210,9 +213,9 @@ func (a *Allocation) Close() error {
 //  transport address of the received UDP datagram.  The Data indication
 //  is then sent on the 5-tuple associated with the allocation.
 
-const rtpMTU = 1600
+const rtpMTU = 1500
 
-func (a *Allocation) packetHandler(m *Manager) {
+func (a *Allocation) packetHandler(username string, m *Manager) {
 	buffer := make([]byte, rtpMTU)
 
 	for {
@@ -234,6 +237,7 @@ func (a *Allocation) packetHandler(m *Manager) {
 			}
 			channelData.Encode()
 
+			a.trackTraffic(username)
 			if _, err = a.TurnSocket.WriteTo(channelData.Raw, a.fiveTuple.SrcAddr); err != nil {
 				a.log.Errorf("Failed to send ChannelData from allocation %v %v", srcAddr, err)
 			}
@@ -243,12 +247,15 @@ func (a *Allocation) packetHandler(m *Manager) {
 			dataAttr := proto.Data(buffer[:n])
 
 			msg, err := stun.Build(stun.TransactionID, stun.NewType(stun.MethodData, stun.ClassIndication), peerAddressAttr, dataAttr)
+
 			if err != nil {
 				a.log.Errorf("Failed to send DataIndication from allocation %v %v", srcAddr, err)
 			}
 			a.log.Debugf("relaying message from %s to client at %s",
 				srcAddr.String(),
 				a.fiveTuple.SrcAddr.String())
+
+			a.trackTraffic(username)
 			if _, err = a.TurnSocket.WriteTo(msg.Raw, a.fiveTuple.SrcAddr); err != nil {
 				a.log.Errorf("Failed to send DataIndication from allocation %v %v", srcAddr, err)
 			}
