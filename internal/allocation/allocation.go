@@ -27,7 +27,7 @@ type Allocation struct {
 	channelBindings     []*ChannelBind
 	lifetimeTimer       *time.Timer
 	closed              chan interface{}
-	trackTraffic        func(username string)
+	trackTraffic        func(username string, size int)
 	log                 logging.LeveledLogger
 }
 
@@ -42,7 +42,7 @@ func addr2IPFingerprint(addr net.Addr) string {
 }
 
 // NewAllocation creates a new instance of NewAllocation.
-func NewAllocation(trackTraffic func(username string), turnSocket net.PacketConn, fiveTuple *FiveTuple, log logging.LeveledLogger) *Allocation {
+func NewAllocation(trackTraffic func(username string, size int), turnSocket net.PacketConn, fiveTuple *FiveTuple, log logging.LeveledLogger) *Allocation {
 	return &Allocation{
 		TurnSocket:   turnSocket,
 		fiveTuple:    fiveTuple,
@@ -237,7 +237,7 @@ func (a *Allocation) packetHandler(username string, m *Manager) {
 			}
 			channelData.Encode()
 
-			a.trackTraffic(username)
+			a.trackTraffic(username, len(channelData.Raw))
 			if _, err = a.TurnSocket.WriteTo(channelData.Raw, a.fiveTuple.SrcAddr); err != nil {
 				a.log.Errorf("Failed to send ChannelData from allocation %v %v", srcAddr, err)
 			}
@@ -255,7 +255,7 @@ func (a *Allocation) packetHandler(username string, m *Manager) {
 				srcAddr.String(),
 				a.fiveTuple.SrcAddr.String())
 
-			a.trackTraffic(username)
+			a.trackTraffic(username, int(msg.Length))
 			if _, err = a.TurnSocket.WriteTo(msg.Raw, a.fiveTuple.SrcAddr); err != nil {
 				a.log.Errorf("Failed to send DataIndication from allocation %v %v", srcAddr, err)
 			}

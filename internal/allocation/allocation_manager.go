@@ -14,7 +14,7 @@ type ManagerConfig struct {
 	LeveledLogger      logging.LeveledLogger
 	AllocatePacketConn func(network string, requestedPort int) (net.PacketConn, net.Addr, error)
 	AllocateConn       func(network string, requestedPort int) (net.Conn, net.Addr, error)
-	TrackTraffic       func(username string)
+	TrackTraffic       func(username string, size int)
 }
 
 type reservation struct {
@@ -32,7 +32,7 @@ type Manager struct {
 
 	allocatePacketConn func(network string, requestedPort int) (net.PacketConn, net.Addr, error)
 	allocateConn       func(network string, requestedPort int) (net.Conn, net.Addr, error)
-	trackTraffic       func(username string)
+	trackTraffic       func(username string, size int)
 }
 
 // NewManager creates a new instance of Manager.
