@@ -95,7 +95,7 @@ type ServerConfig struct {
 	ChannelBindTimeout time.Duration
 
 	// Track Traffic
-	TrackTraffic func(username string)
+	TrackTraffic func(username string, size int)
 }
 
 func (s *ServerConfig) validate() error {
